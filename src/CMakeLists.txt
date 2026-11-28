@@ -248,6 +248,7 @@ add_library(taxbroker_server_lib STATIC
     server/run_routes.cpp
     server/server.cpp
     server/server_config.cpp
+    server/start_failure_page.cpp
     server/state_folder.cpp
     server/static_files.cpp
 )

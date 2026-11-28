@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 import { launchBrowser } from "./browser";
 import { loginContext } from "./report_page";
-import { startServer, type RunningServer } from "./server";
+import { startServer, type RunningServer, type StartOptions } from "./server";
 
 /** What a scenario works with: its own server, and a browser profile that is logged in to it. */
 export interface Session {
@@ -19,9 +19,10 @@ export interface Session {
  * Registers the hooks of a test file: one Chromium for the file, and for every scenario a new
  * server with its own empty folders and a new login. The server keeps the answers of a session
  * for the next run, so a scenario that starts from a new session starts from a clean state.
+ * `options.native` starts the server like a menu start (it stops when the last page closes).
  * A failed scenario leaves a screenshot of each open page in `TBR_E2E_SCREENSHOTS`, if set.
  */
-export function useSession(): Session {
+export function useSession(options: StartOptions = { native: false }): Session {
   const session = {} as Session;
 
   beforeAll(async () => {
@@ -34,7 +35,7 @@ export function useSession(): Session {
   });
 
   beforeEach(async () => {
-    session.server = await startServer();
+    session.server = await startServer(options);
     session.context = await loginContext(session.browser, session.server);
   });
 

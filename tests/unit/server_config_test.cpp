@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace {
 using namespace taxbroker;
@@ -173,6 +174,18 @@ TEST(ServerConfigTest, RelativeLaunchFileIsRefused) {
 
     ASSERT_TRUE(std::holds_alternative<std::string>(result));
     EXPECT_EQ(std::get<std::string>(result), "TBR_LAUNCH_FILE must be an absolute path.");
+}
+
+TEST(ServerConfigTest, VersionRequestIsTheOptionAloneAndNothingElse) {
+    const std::vector<std::string> noArguments{};
+    const std::vector<std::string> versionOnly{"--version"};
+    const std::vector<std::string> versionAndMore{"--version", "x"};
+    const std::vector<std::string> otherOption{"--help"};
+
+    EXPECT_FALSE(isVersionRequest(noArguments));
+    EXPECT_TRUE(isVersionRequest(versionOnly));
+    EXPECT_FALSE(isVersionRequest(versionAndMore));
+    EXPECT_FALSE(isVersionRequest(otherOption));
 }
 
 TEST(ServerConfigTest, SystemEnvironmentFindsASetVariableAndNotAMissingOne) {

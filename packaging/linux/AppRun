@@ -1,0 +1,11 @@
+#!/bin/sh
+# The entry of the AppImage: a double click (no arguments) starts the server, which opens the
+# browser; with arguments the same file runs the command line program, for example
+# `TaxBrokerReport-2.0.0-x86_64.AppImage report --help`.
+here="$(dirname "$(readlink -f "$0")")"
+
+if [ "$#" -eq 0 ]; then
+    exec "$here/usr/bin/taxbroker_server"
+fi
+
+exec "$here/usr/bin/taxbroker" "$@"

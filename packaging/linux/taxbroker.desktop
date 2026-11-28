@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=TaxBrokerReport
+Comment=Turns broker exports into Slovenian FURS tax forms
+Comment[sl]=Pretvori izvoze borznih posrednikov v slovenske obrazce FURS
+Exec=taxbroker_server
+Icon=taxbroker
+Terminal=false
+Categories=Office;Finance;

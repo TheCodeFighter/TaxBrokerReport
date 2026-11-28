@@ -16,8 +16,10 @@ exports into FURS XML files that you import into eDavki.
 
 ## Status
 
-Today the `taxbroker report` command line writes the **Doh-KDVP** form (capital gains) for one
-tax year from **Trade Republic** CSV exports:
+Today the `taxbroker report` command line writes the forms **Doh-KDVP** (capital gains),
+**Doh-Div** (dividends), **Doh-DHO** and **Doh-Obr** (interest) for one tax year from **Trade
+Republic** CSV exports and **Interactive Brokers** Flex Query XML files. The points below describe
+the capital gains form:
 
 - shares and funds (ETFs) bought and sold in EUR;
 - units held longer than the holding period are left out as tax free and listed in the summary;
@@ -41,8 +43,8 @@ the input). When each such problem except an unanswered question is tied to a si
 investment (one or several), the command asks whether to leave all of them out instead.
 `scripts/report.sh --command-help` lists every case.
 
-Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the
-browser app, Windows and macOS builds, and downloadable releases.
+Not yet available: Windows and macOS builds, and a published release (the Linux packages are
+built by CI, see "Install on Linux").
 
 ## Why TaxBrokerReport
 
@@ -51,7 +53,38 @@ browser app, Windows and macOS builds, and downloadable releases.
   private file on this computer that you can delete there.
 - **Free and open source:** MIT licensed, every line can be checked.
 - **Whole history:** FIFO runs over all the exports you give it, overlapping files included, so
-  older purchases count. FIFO across brokers is planned with Interactive Brokers.
+  older purchases count, across all the brokers you give it.
+
+## Install on Linux
+
+The Linux x86-64 packages are three files from the same build, plus `SHA256SUMS`. CI makes them
+for every change to `main` (the artifact `taxbroker-linux-x86_64-<commit>` of the CI run); the
+first published release comes with the beta. They need no installation of libraries (the
+programs are static). Check the files first: `sha256sum -c SHA256SUMS`.
+
+- **tar.gz:** `tar -xzf taxbroker-2.0.0-linux-x86_64.tar.gz`, then `./taxbroker_server` in the
+  new folder.
+- **deb (Debian, Ubuntu):** `sudo apt install ./taxbroker_2.0.0_amd64.deb`. It adds TaxBrokerReport
+  to the application menu and the commands `taxbroker` and `taxbroker_server`.
+- **AppImage:** `chmod +x TaxBrokerReport-2.0.0-x86_64.AppImage`, then a double click, or run it.
+  With arguments it runs the command line (`./TaxBrokerReport-2.0.0-x86_64.AppImage report --help`).
+  It needs FUSE 2 (the `libfuse2` package) on some systems; `APPIMAGE_EXTRACT_AND_RUN=1` runs it
+  without FUSE.
+
+Start it from the application menu (deb), with a double click (AppImage) or with
+`taxbroker_server` in a terminal: it
+opens your browser on a one-time link (it works once, for 2 minutes). If the browser does not
+open, copy the link that `taxbroker_server` prints into it. Stop it with the "Quit the program"
+button in the page, or Ctrl+C or closing the window of the terminal it runs in. It also stops by
+itself when you close its last browser tab (after 10 seconds, so a reload keeps it), when nobody
+logs in within 3 minutes, and after 60 minutes without use. The command line
+is `taxbroker report --help`; `taxbroker --version` prints the version.
+
+To remove it: delete the unpacked folder (tar.gz), run `sudo apt remove taxbroker` (deb) or
+delete the file (AppImage). The program keeps two folders of its own, which you delete yourself
+if you no longer need them: `~/.local/share/taxbroker/` (the saved taxpayer details, only if you
+chose to save them) and `~/.local/state/taxbroker/` (the log, which holds no amounts, names or
+paths). The packages hold the disclaimer below in their README and licence files.
 
 ## Build and run
 

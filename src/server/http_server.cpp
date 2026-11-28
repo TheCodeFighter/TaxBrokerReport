@@ -9,6 +9,7 @@
 #include <chrono>
 #include <csignal>
 #include <exception>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -57,6 +58,16 @@ asio::ip::address parseHost(const std::string& aHost) {
     return address;
 }
 
+/// What a connection tells the server about a response it wrote.
+struct ConnectionHooks {
+    std::function<void()> mSessionUsed; ///< A response with `mSessionUsed` is about to be written.
+    std::function<void()> mStop;        ///< A response with `mStopAfterWrite` was written.
+    /// A response with `mLastPageClosed` is about to be written.
+    std::function<void()> mPageClosed;
+    /// A response with `mPageOpened` is about to be written.
+    std::function<void()> mPageOpened;
+};
+
 /// One client connection: reads a request, answers it, and repeats while the client keeps the
 /// connection alive. It lives as long as a read or write of it is pending.
 class Connection : public std::enable_shared_from_this<Connection> {
@@ -64,9 +75,10 @@ class Connection : public std::enable_shared_from_this<Connection> {
     Connection(tcp::socket&& aSocket,
                const HttpServerOptions& aOptions,
                std::shared_ptr<const HttpServer::Handler> aHandler,
-               std::shared_ptr<const HttpServer::BodyPolicyFunction> aBodyPolicy)
+               std::shared_ptr<const HttpServer::BodyPolicyFunction> aBodyPolicy,
+               std::shared_ptr<const ConnectionHooks> aHooks)
         : mStream(std::move(aSocket)), mOptions(aOptions), mHandler(std::move(aHandler)),
-          mBodyPolicy(std::move(aBodyPolicy)) {}
+          mBodyPolicy(std::move(aBodyPolicy)), mHooks(std::move(aHooks)) {}
 
     void start() {
         read();
@@ -271,6 +283,21 @@ class Connection : public std::enable_shared_from_this<Connection> {
         // The request is not needed any more: free the body before the response is written.
         mRequest = HttpRequest{};
 
+        if (response.mSessionUsed)
+        {
+            mHooks->mSessionUsed();
+        }
+
+        if (response.mPageOpened)
+        {
+            mHooks->mPageOpened();
+        }
+
+        if (response.mLastPageClosed)
+        {
+            mHooks->mPageClosed();
+        }
+
         write(std::move(response), message.version(), message.keep_alive());
     }
 
@@ -285,7 +312,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
         }
 
         message->body() = std::move(aResponse.mBody);
-        message->keep_alive(aKeepAlive);
+
+        // The answer of the quit route is the last one: the connection closes with it.
+        message->keep_alive(aKeepAlive && !aResponse.mStopAfterWrite);
         message->prepare_payload();
 
         mStream.expires_after(mOptions.mTimeout);
@@ -293,7 +322,18 @@ class Connection : public std::enable_shared_from_this<Connection> {
         http::async_write(
             mStream,
             *message,
-            [self = shared_from_this(), message](beast::error_code aError, std::size_t) {
+            [self = shared_from_this(),
+             message,
+             stopAfter = aResponse.mStopAfterWrite](beast::error_code aError, std::size_t) {
+                if (stopAfter)
+                {
+                    // Written (or failed): the page is told or the connection is gone either way.
+                    self->close();
+                    self->mHooks->mStop();
+
+                    return;
+                }
+
                 if (aError || message->need_eof())
                 {
                     self->close();
@@ -317,13 +357,15 @@ class Connection : public std::enable_shared_from_this<Connection> {
     HttpServerOptions mOptions;
     std::shared_ptr<const HttpServer::Handler> mHandler;
     std::shared_ptr<const HttpServer::BodyPolicyFunction> mBodyPolicy;
+    std::shared_ptr<const ConnectionHooks> mHooks;
 };
 
 } // namespace
 
 struct HttpServer::Impl {
     Impl(const std::string& aHost, std::uint16_t aPort, const HttpServerOptions& aOptions)
-        : mOptions(aOptions), mAcceptor(mContext), mRetryTimer(mContext) {
+        : mOptions(aOptions), mAcceptor(mContext), mRetryTimer(mContext), mNoLoginTimer(mContext),
+          mIdleTimer(mContext), mClosedPageTimer(mContext) {
         const tcp::endpoint endpoint(parseHost(aHost), aPort);
 
         try
@@ -378,19 +420,103 @@ struct HttpServer::Impl {
 
             mAcceptFailing = false;
 
-            std::make_shared<Connection>(std::move(aSocket), mOptions, mHandler, mBodyPolicy)
+            std::make_shared<Connection>(std::move(aSocket),
+                                         mOptions,
+                                         mHandler,
+                                         mBodyPolicy,
+                                         mHooks)
                 ->start();
             accept();
+        });
+    }
+
+    /// Starts the no-login timer; called once when `run` starts.
+    void startNoLoginTimer() {
+        if (mOptions.mNoLoginLimit.count() <= 0)
+        {
+            return;
+        }
+
+        mNoLoginTimer.expires_after(mOptions.mNoLoginLimit);
+        mNoLoginTimer.async_wait([this](const beast::error_code& aError) {
+            // A login after the timer fired but before this ran also counts.
+            if (aError || mSessionSeen)
+            {
+                return;
+            }
+
+            LOG_INFO("Stopped: nobody opened the link");
+            mContext.stop();
+        });
+    }
+
+    /// A response that counts as use is about to be written: the first one ends the no-login
+    /// wait, every one restarts the idle wait.
+    void sessionUsed() {
+        mSessionSeen = true;
+        mNoLoginTimer.cancel();
+
+        if (mOptions.mIdleLimit.count() <= 0)
+        {
+            return;
+        }
+
+        // Restarting cancels the pending wait. A wait that already expired may still run with
+        // success: it checks the new expiry time.
+        mIdleTimer.expires_after(mOptions.mIdleLimit);
+        mIdleTimer.async_wait([this](const beast::error_code& aError) {
+            if (aError || mIdleTimer.expiry() > asio::steady_timer::clock_type::now())
+            {
+                return;
+            }
+
+            LOG_INFO("Stopped: not used for a while");
+            mContext.stop();
+        });
+    }
+
+    /// A page said it is open: a reload came back, so the wait after the close ends. A request
+    /// of a page that is closing (a run that was still going) does not end it.
+    void pageOpened() {
+        mClosePending = false;
+        mClosedPageTimer.cancel();
+    }
+
+    /// The last open page closed: waits for a page to come back, then stops.
+    void pageClosed() {
+        if (mOptions.mClosedPageLimit.count() <= 0)
+        {
+            return;
+        }
+
+        mClosePending = true;
+        mClosedPageTimer.expires_after(mOptions.mClosedPageLimit);
+        mClosedPageTimer.async_wait([this](const beast::error_code& aError) {
+            // An open message after the timer fired but before this ran also counts.
+            if (aError || !mClosePending ||
+                mClosedPageTimer.expiry() > asio::steady_timer::clock_type::now())
+            {
+                return;
+            }
+
+            LOG_INFO("Stopped: the page was closed");
+            mContext.stop();
         });
     }
 
     HttpServerOptions mOptions;
     asio::io_context mContext{1};
     tcp::acceptor mAcceptor;
-    asio::steady_timer mRetryTimer; ///< Waits after an accept error.
-    bool mAcceptFailing{};          ///< True after a failed accept, until one works; for the log.
+    asio::steady_timer mRetryTimer;      ///< Waits after an accept error.
+    asio::steady_timer mNoLoginTimer;    ///< Stops the server when nobody logs in.
+    asio::steady_timer mIdleTimer;       ///< Stops the server after a long time without use.
+    asio::steady_timer mClosedPageTimer; ///< Stops the server when the last page closed.
+    bool mClosePending{};  ///< True from a close message until a page says it is open.
+    bool mSessionSeen{};   ///< True after the first response that counts as use.
+    bool mAcceptFailing{}; ///< True after a failed accept, until one works; for the log.
     std::shared_ptr<const HttpServer::Handler> mHandler;
     std::shared_ptr<const HttpServer::BodyPolicyFunction> mBodyPolicy;
+    std::shared_ptr<const ConnectionHooks> mHooks;
 };
 
 HttpServer::HttpServer(const std::string& aHost,
@@ -408,14 +534,28 @@ void HttpServer::run(Handler aHandler, BodyPolicyFunction aBodyPolicy) {
     mImpl->mHandler = std::make_shared<const Handler>(std::move(aHandler));
     mImpl->mBodyPolicy = std::make_shared<const BodyPolicyFunction>(std::move(aBodyPolicy));
 
+    std::shared_ptr<ConnectionHooks> hooks = std::make_shared<ConnectionHooks>();
+    hooks->mSessionUsed = [this]() { mImpl->sessionUsed(); };
+    hooks->mStop = [this]() { mImpl->mContext.stop(); };
+    hooks->mPageClosed = [this]() { mImpl->pageClosed(); };
+    hooks->mPageOpened = [this]() { mImpl->pageOpened(); };
+    mImpl->mHooks = std::move(hooks);
+
     std::optional<asio::signal_set> signals;
 
     if (mImpl->mOptions.mHandleSignals)
     {
         signals.emplace(mImpl->mContext, SIGINT, SIGTERM);
+
+#if !defined(_WIN32)
+        // A closed terminal window: stop cleanly, so the launch file goes too.
+        signals->add(SIGHUP);
+#endif
+
         signals->async_wait([this](const beast::error_code&, int) { mImpl->mContext.stop(); });
     }
 
+    mImpl->startNoLoginTimer();
     mImpl->accept();
     mImpl->mContext.run();
     mImpl->mAcceptor.close();

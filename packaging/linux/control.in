@@ -1,0 +1,18 @@
+Package: taxbroker
+Version: @VERSION@
+Architecture: amd64
+Maintainer: David Ogorevc <tax.brokerage.report@gmail.com>
+Installed-Size: @INSTALLED_SIZE@
+Section: misc
+Priority: optional
+Homepage: https://github.com/TheCodeFighter/TaxBrokerReport
+Recommends: xdg-utils
+Description: Turns broker exports into Slovenian FURS tax forms
+ TaxBrokerReport reads Trade Republic and Interactive Brokers exports and writes the
+ Slovenian tax forms Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr as XML for eDavki. It runs on
+ your computer only: a local server opens the program in your browser, and nothing is sent
+ anywhere.
+ .
+ Not tax advice and not affiliated with FURS or any broker; you check every value and file
+ the return yourself. Provided as is, without warranty; no liability for tax errors, fines
+ or omissions.

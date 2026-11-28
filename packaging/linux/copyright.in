@@ -1,0 +1,21 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: TaxBrokerReport
+Upstream-Contact: David Ogorevc <tax.brokerage.report@gmail.com>
+Source: https://github.com/TheCodeFighter/TaxBrokerReport
+
+Files: *
+Copyright: 2026 David Ogorevc
+License: Expat
+Comment:
+ Disclaimer. This is an unofficial community tool. It is not tax advice, and it is not
+ affiliated with FURS or any broker. You are responsible for checking every value in the
+ generated files and for filing your return in eDavki.
+ .
+ This software is provided "as is" under the MIT License, without warranty of any kind. The
+ developer assumes no liability for tax errors, fines or omissions.
+ .
+ The programs contain third-party code. Its licences are in
+ /usr/lib/taxbroker/THIRD_PARTY_NOTICES.txt.
+
+License: Expat
+@MIT_TEXT@

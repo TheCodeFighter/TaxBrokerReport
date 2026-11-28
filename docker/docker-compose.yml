@@ -38,6 +38,20 @@ services:
     volumes:
       - ..:/workspace
 
+  # The Linux packages (scripts/package.sh): the image holds the binaries and the tools, the run
+  # writes the packages to the mounted build/package folder. Run as the host user.
+  package:
+    image: taxbrokerreport-package
+    user: "${UID}:${GID}"
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: package
+    environment:
+      - SOURCE_DATE_EPOCH
+    volumes:
+      - ../build/package:/out
+
   prod:
     image: taxbrokerreport-prod
     build:

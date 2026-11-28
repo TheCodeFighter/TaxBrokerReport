@@ -186,12 +186,12 @@ Production image ── Browser tests    (e2e.sh; also needs Dev image; only whe
   and merges them; the result is the same as one capture.
 - The `Production image` job is its own Release build and shares nothing; it is the shipped image.
   Its `frontend` stage builds the frontend (`npm ci --ignore-scripts`, `npm run build`), and the
-  builder stage embeds the four files (`TAXBROKER_FRONTEND_DIR`). It checks the static binaries
-  on the Ubuntu runner (so outside Alpine): both are statically linked, the CLI passes
-  `tests/support/check_cli_report.cmake` (golden XML), the server serves `/` and its three
-  assets, and it exits with 0. On a push to `main` it uploads `taxbroker-linux-x86_64.tar.gz`
-  (both binaries, `LICENSE` and `THIRD_PARTY_NOTICES.txt`) as the artifact
-  `taxbroker-linux-x86_64-<short commit>`, kept for 30 days.
+  builder stage embeds the four files (`TAXBROKER_FRONTEND_DIR`). It checks that both binaries
+  are statically linked, makes the Linux packages with `scripts/package.sh` (stage `package`:
+  tar.gz, .deb, AppImage and `SHA256SUMS`) and checks them with `scripts/smoke_package.sh` on the
+  Ubuntu runner and in a clean Ubuntu container (so outside Alpine): the report CLI against the
+  golden XML, the server's page and assets, and a clean stop. On a push to `main` it uploads
+  `build/package/` as the artifact `taxbroker-linux-x86_64-<short commit>`, kept for 30 days.
 
 ---
 

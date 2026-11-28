@@ -130,6 +130,7 @@ Usage:
                    [--trade-republic FILE...] [--ibkr FILE...]
   taxbroker report --help
   taxbroker --help
+  taxbroker --version
 
 Commands:
   report    Write the tax forms Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr for one year.
@@ -171,6 +172,30 @@ TEST(ReportCommandTest, HelpCommandWritesTheGeneralHelp) {
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(result.mErr.empty());
     EXPECT_EQ(result.mOut, kGeneralHelp);
+}
+
+TEST(ReportCommandTest, VersionOptionWritesTheProgramNameAndTheVersion) {
+    const auto result = run({"--version"});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_EQ(result.mOut, "TaxBrokerReport 2.0.0\n");
+}
+
+TEST(ReportCommandTest, GeneralHelpListsTheVersionOption) {
+    const auto result = run({"--help"});
+
+    EXPECT_TRUE(contains(result.mOut, "  taxbroker --version\n"));
+}
+
+TEST(ReportCommandTest, VersionOptionWithAnotherArgumentFails) {
+    const auto result = run({"--version", "report"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --version takes no other argument.\n"
+              "Run 'taxbroker --help' for the commands.\n");
 }
 
 TEST(ReportCommandTest, CommandNamesAreCaseSensitive) {

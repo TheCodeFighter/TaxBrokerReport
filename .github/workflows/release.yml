@@ -1,0 +1,89 @@
+name: Release
+
+# A pushed tag `v<version>` runs the whole CI (tests, Valgrind, Cppcheck, fuzzing, format, frontend
+# and browser tests; the coverage jobs run on pull requests only), and then leaves the Linux
+# packages that CI built and checked in a DRAFT GitHub Release. Nothing is published: the
+# maintainer reads the draft in GitHub (Releases) and publishes it by hand. The tag must be `v`
+# plus the version of CMakeLists.txt, so the footer of the application shows exactly the released
+# version.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  check-tag:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check the tag against the project version
+        run: |
+          set -euo pipefail
+
+          version="$(sed -n 's/^project(TaxBrokerReport VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag is $GITHUB_REF_NAME, but CMakeLists.txt has version $version." >&2
+            exit 1
+          fi
+
+  # The same workflow as for a push to main. A called workflow cannot have more permissions than
+  # its caller grants; the coverage comment job of CI asks for pull-requests: write (it is skipped
+  # here, but the permission is checked before the run).
+  ci:
+    name: CI
+    needs: check-tag
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: write
+
+  draft-release:
+    name: Draft release
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      # The packages are the artifact of the Production image job of the CI run above: the files
+      # that were tested are the files that are released.
+      - name: Download the Linux packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: taxbroker-linux-x86_64-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/packages
+
+      - name: Check the packages
+        run: |
+          set -euo pipefail
+
+          cd "$RUNNER_TEMP/packages"
+          test "$(ls | wc -l)" -eq 4
+          sha256sum -c SHA256SUMS
+
+      - name: Make the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --verify-tag \
+            --title "TaxBrokerReport ${GITHUB_REF_NAME#v}" \
+            --notes "Linux x86-64 packages: a tar.gz, a .deb and an AppImage. Check them against SHA256SUMS. See the README (Install on Linux) for the steps." \
+            "$RUNNER_TEMP"/packages/*

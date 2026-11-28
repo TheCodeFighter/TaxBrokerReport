@@ -97,7 +97,7 @@ scripts/build.sh prod           # the production image builds and embeds it in i
   (`docker compose run ... -w /workspace/frontend dev`, with `-e HOME=/tmp`), run `npm audit`, and
   commit the lock file. Vite is on the 7 line and Vitest on the 4 line, the newest that work
   together and have no known advisory (checked with `npm audit`).
-- **Size budget.** Not compressed: `assets/app.js` 152 KB, `assets/app.css` 15 KB,
+- **Size budget.** Not compressed: `assets/app.js` 160 KiB, `assets/app.css` 15 KiB,
   `assets/logo.webp` 12 KB, `index.html` 4 KB. `scripts/frontend.sh check` fails above them.
 - **Logo.** `frontend/src/assets/logo.webp` is made once from `docs/assets/icon.jpg`, with
   ImageMagick in a throwaway container (ImageMagick is not part of any image):
@@ -153,6 +153,67 @@ again after `scripts/build.sh image`.
   attributes. A failed test saves a screenshot to the ignored `runtime/e2e/`.
 - **Debugging.** Print `await page.locator("main:not([hidden])").ariaSnapshot()` to see what the
   page offers. A page in the background does not draw: call `bringToFront()` before acting on it.
+
+## Release package (Linux)
+
+`packaging/linux/` and `docker/Dockerfile` (stage `package`) make three Linux x86-64 packages from
+the two static binaries of the production image, plus `SHA256SUMS`:
+
+```sh
+scripts/package.sh                      # makes the four files in build/package
+scripts/smoke_package.sh build/package  # checks them (Docker, curl and tar are needed)
+```
+
+The output is always in `build/package/` of the checkout (the folder is emptied at every run;
+`build/` is ignored by git). After a run it holds exactly these four files, with the version of
+`CMakeLists.txt` in the names:
+
+```text
+build/package/taxbroker-2.0.0-linux-x86_64.tar.gz
+build/package/taxbroker_2.0.0_amd64.deb
+build/package/TaxBrokerReport-2.0.0-x86_64.AppImage
+build/package/SHA256SUMS
+```
+
+To try the result by hand, for example `sudo apt install ./build/package/taxbroker_2.0.0_amd64.deb`
+or `chmod +x build/package/TaxBrokerReport-2.0.0-x86_64.AppImage`, then run it. The script prints
+the folder listing when it ends.
+
+- **Contents.** The tar.gz is one folder (`taxbroker`, `taxbroker_server`, `LICENSE`,
+  `THIRD_PARTY_NOTICES.txt`, `README.txt`). The `.deb` puts the programs, the licence files and
+  the notices in `/usr/lib/taxbroker/`, links in `/usr/bin/`, a menu entry, a 256 x 256 icon and a
+  `copyright` file; it has no maintainer script and no `Depends` (the programs are static). The
+  AppImage is the type 2 runtime (a numbered release, downloaded once in the Dockerfile and checked
+  by SHA-256; `APPIMAGE_RUNTIME_NOTICES.txt` lists its licences) followed by a SquashFS image of
+  the AppDir; `AppRun` starts the server without arguments and the command line with arguments.
+  No tool of the AppImage project that needs glibc is used. The disclaimer is in the `README.txt`
+  of the tar.gz and the AppImage, in the `copyright` file and the description of the `.deb`, and
+  on the start-failure page. The XSD files are not shipped (only the tests use them).
+- **Reproducible.** The time of every file is the time of the last commit (`SOURCE_DATE_EPOCH`),
+  the owner is root, the order is sorted, gzip stores no name. `make_packages.sh` runs in a new
+  container at every `scripts/package.sh`, so two runs on the same commit give the same
+  `SHA256SUMS`; the binaries come from the cached builder stage, so a new compile of the same
+  source may still differ in the binary.
+- **Smoke check.** `scripts/smoke_package.sh` uses a new `HOME` and runtime folder outside the
+  checkout and a fake `xdg-open` first in `PATH`, so no browser opens. It checks the sums, the tar
+  entries and modes, the `.deb` in a clean `ubuntu:24.04` container without network (pinned by
+  digest; install, `--version`, the report against the golden Doh-KDVP file, the menu entry,
+  removal), the AppImage in the same container (extract and run, no FUSE), and the server of the
+  tar.gz and the AppImage (start, the page and the three assets, SIGHUP, SIGTERM, exit code 0, the
+  launch file gone). The menu entry is validated by `desktop-file-validate` while the packages
+  are made.
+- **CI.** The `Production image` job runs both scripts on every pull request and every push; a
+  push to `main` uploads `build/package/` as the artifact `taxbroker-linux-x86_64-<commit>`.
+  `.github/workflows/release.yml` runs on a pushed tag `v<version>`: it checks that the tag is `v`
+  plus the version of `CMakeLists.txt`, runs the whole CI (`workflow_call`; the coverage jobs run on
+  pull requests only), then makes a draft GitHub Release from the packages that CI built and
+  checked (the artifact of the `Production image` job). The workflow publishes nothing: the
+  maintainer publishes the draft in GitHub. The artifact download drops the executable bit of the
+  AppImage, so the README tells users to `chmod +x` it.
+- **The server stops** by itself (3 minutes without a login, 60 minutes without use, 10 seconds
+  after the last browser tab closed; the last one only for a native start, not in Docker), from the
+  "Quit the program" button (`POST /api/quit`), and on SIGINT, SIGTERM and SIGHUP; see R21 and R22
+  in `docs/architecture.md`.
 
 ## Static analysis
 

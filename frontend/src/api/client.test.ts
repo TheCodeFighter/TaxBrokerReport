@@ -30,6 +30,7 @@ describe("createApiClient", () => {
 
     expect(fetchFunction).toHaveBeenCalledTimes(1);
     expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    expect(onSessionEnded).toHaveBeenCalledWith("unauthorized");
     expect(client.isSessionEnded()).toBe(true);
   });
 
@@ -41,6 +42,7 @@ describe("createApiClient", () => {
     await expect(client.apiFetch("/api/run")).rejects.toBeInstanceOf(SessionEndedError);
 
     expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    expect(onSessionEnded).toHaveBeenCalledWith("unreachable");
     expect(client.isSessionEnded()).toBe(true);
   });
 

@@ -30,6 +30,17 @@ struct HttpResponse {
     unsigned mStatus{};              ///< HTTP status code; always set by the creator.
     std::vector<HttpField> mHeaders; ///< Security headers first, then the route's own.
     std::string mBody;               ///< The body; empty when there is none.
+    /// The request carried a valid session or made one: it counts as use of the program, so the
+    /// automatic stop starts counting again. Set by the routes.
+    bool mSessionUsed{};
+    /// The server stops after this response is written. Set by the quit route only.
+    bool mStopAfterWrite{};
+    /// The last open page said it closed: the server starts its wait for a page to come back.
+    /// Set by the tab route only.
+    bool mLastPageClosed{};
+    /// A page said it is open: it ends the wait that a close started (a reload). Set by the tab
+    /// route only.
+    bool mPageOpened{};
 };
 
 /// How much body the server may read for a request, decided from its header alone.

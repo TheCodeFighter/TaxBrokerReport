@@ -9,6 +9,8 @@ export interface RunningServer {
   link: string;
   /** The address without the token, for a reload. */
   origin: string;
+  /** Resolves with the exit code when the process ends (null when a signal ended it). */
+  exited: Promise<number | null>;
   stop: () => Promise<void>;
 }
 
@@ -19,23 +21,42 @@ function serverBinary(): string {
   return resolve(process.cwd(), "../build/static/taxbroker_server");
 }
 
+/** How the server is started. */
+export interface StartOptions {
+  /**
+   * True: start as a user does from the menu (no `TBR_LAUNCH_FILE`, the launch file in a runtime
+   * folder, no browser program on the `PATH`), so the server stops when the last page closes.
+   * False: start as in Docker, where the server keeps running when a page closes.
+   */
+  native: boolean;
+}
+
 /**
  * Starts the server on a free port with its own empty folders for the log, the saved profile and
  * the launch file, and waits for the line with the link. The folder is deleted by `stop`.
  */
-export async function startServer(): Promise<RunningServer> {
+export async function startServer(options: StartOptions = { native: false }): Promise<RunningServer> {
   const folder = await mkdtemp(join(tmpdir(), "tbr-e2e-"));
+  const environment: Record<string, string> = {
+    PATH: options.native ? "" : (process.env.PATH ?? ""),
+    HOME: folder,
+    XDG_DATA_HOME: join(folder, "data"),
+    TBR_LOG_FILE: join(folder, "taxbroker.log"),
+    TBR_SERVER_PORT: "0",
+  };
+
+  if (options.native) {
+    environment.XDG_RUNTIME_DIR = join(folder, "run");
+  } else {
+    environment.TBR_LAUNCH_FILE = join(folder, "launch.html");
+  }
+
   const child: ChildProcess = spawn(serverBinary(), [], {
-    env: {
-      PATH: process.env.PATH ?? "",
-      HOME: folder,
-      XDG_DATA_HOME: join(folder, "data"),
-      TBR_LOG_FILE: join(folder, "taxbroker.log"),
-      TBR_SERVER_PORT: "0",
-      TBR_LAUNCH_FILE: join(folder, "launch.html"),
-    },
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
+
+  const exited = new Promise<number | null>((done) => child.once("exit", (code) => done(code)));
 
   let output = "";
   let stopping = false;
@@ -96,5 +117,5 @@ export async function startServer(): Promise<RunningServer> {
     await rm(folder, { recursive: true, force: true });
   };
 
-  return { link, origin: new URL(link).origin, stop };
+  return { link, origin: new URL(link).origin, exited, stop };
 }

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -23,6 +24,10 @@ struct ServerConfig {
 /// (default 0) and `TBR_LAUNCH_FILE`. Returns the options, or one error line that names the
 /// variable but never its value.
 [[nodiscard]] std::variant<ServerConfig, std::string> readServerConfig(const EnvLookup& aEnv);
+
+/// True when the server was started with `--version` and nothing else (aArguments are the
+/// arguments after the program name). Every other argument is ignored by the server.
+[[nodiscard]] bool isVersionRequest(std::span<const std::string> aArguments);
 
 /// True for the exact names `127.0.0.1` and `localhost`.
 [[nodiscard]] bool isLoopbackHost(std::string_view aHost);

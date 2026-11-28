@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -61,6 +62,20 @@ std::string_view queryOf(const std::string& aTarget) {
 /// True for "/api" and every path below "/api/".
 bool isApiPath(std::string_view aPath) {
     return aPath == "/api" || aPath.starts_with("/api/");
+}
+
+/// The most pages that may be open at once; a client cannot grow the set without limit.
+constexpr std::size_t kMaxOpenTabs = 64;
+
+/// True for 1 to 64 letters, digits, `-` and `_`.
+bool isTabId(const std::string& aId) {
+    return !aId.empty() && aId.size() <= 64 &&
+           std::all_of(aId.begin(), aId.end(), [](char aCharacter) {
+               return (aCharacter >= 'a' && aCharacter <= 'z') ||
+                      (aCharacter >= 'A' && aCharacter <= 'Z') ||
+                      (aCharacter >= '0' && aCharacter <= '9') || aCharacter == '-' ||
+                      aCharacter == '_';
+           });
 }
 
 } // namespace
@@ -194,31 +209,73 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
 
     if (verdict.mTarget == Target::Login)
     {
-        return login(aRequest);
+        HttpResponse response = login(aRequest);
+
+        // A made session counts as use; a refused login does not.
+        response.mSessionUsed = response.mStatus == 204;
+
+        return response;
     }
 
+    HttpResponse response = routeApi(aRequest, path);
+    response.mSessionUsed = true;
+
+    return response;
+}
+
+HttpResponse Routes::routeApi(const HttpRequest& aRequest, std::string_view aPath) {
     // Step 7: the routes.
-    if (path == "/api/run" || path.starts_with("/api/run/"))
+    if (aPath == "/api/quit")
     {
-        return mRunRoutes.handle(aRequest, path, queryOf(aRequest.mTarget));
+        if (aRequest.mMethod != "POST")
+        {
+            logRefusal(405, "method_not_allowed");
+
+            return makeNotAllowedResponse("POST");
+        }
+
+        // The server stops after this answer is written, so the page gets it.
+        LOG_INFO("Stopped from the page");
+
+        HttpResponse response = makeJsonResponse(200, R"({"stopping":true})");
+        response.mStopAfterWrite = true;
+
+        return response;
     }
 
-    if (path == "/api/profile" || path.starts_with("/api/profile/"))
+    if (aPath == "/api/tab")
     {
-        return mProfileRoutes.handle(aRequest, path);
+        if (aRequest.mMethod != "POST")
+        {
+            logRefusal(405, "method_not_allowed");
+
+            return makeNotAllowedResponse("POST");
+        }
+
+        return tabMessage(aRequest);
     }
 
-    if (path == "/api/log-level" || path.starts_with("/api/log-level/"))
+    if (aPath == "/api/run" || aPath.starts_with("/api/run/"))
     {
-        return handleLogLevelRoute(aRequest, path);
+        return mRunRoutes.handle(aRequest, aPath, queryOf(aRequest.mTarget));
     }
 
-    if (path == "/api/log")
+    if (aPath == "/api/profile" || aPath.starts_with("/api/profile/"))
+    {
+        return mProfileRoutes.handle(aRequest, aPath);
+    }
+
+    if (aPath == "/api/log-level" || aPath.starts_with("/api/log-level/"))
+    {
+        return handleLogLevelRoute(aRequest, aPath);
+    }
+
+    if (aPath == "/api/log")
     {
         return handleLogFileRoute(aRequest, currentLogFilePath());
     }
 
-    if (path == "/api/messages")
+    if (aPath == "/api/messages")
     {
         if (aRequest.mMethod != "GET")
         {
@@ -230,7 +287,7 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         return makeJsonResponse(200, api::messagesJson());
     }
 
-    if (path == "/api/version")
+    if (aPath == "/api/version")
     {
         if (aRequest.mMethod != "GET")
         {
@@ -242,7 +299,7 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         return makeJsonResponse(200, mVersionBody);
     }
 
-    if (path != "/api/session")
+    if (aPath != "/api/session")
     {
         logRefusal(404, "not_found");
 
@@ -257,6 +314,46 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
     }
 
     return makeResponse(204);
+}
+
+HttpResponse Routes::tabMessage(const HttpRequest& aRequest) {
+    const nlohmann::json body = nlohmann::json::parse(aRequest.mBody, nullptr, false);
+
+    if (!body.is_object() || !body.contains("id") || !body["id"].is_string() ||
+        !body.contains("open") || !body["open"].is_boolean() ||
+        !isTabId(body["id"].get<std::string>()))
+    {
+        logRefusal(400, "bad_request");
+
+        return makeBadRequestResponse();
+    }
+
+    const std::string id = body["id"].get<std::string>();
+    HttpResponse response = makeResponse(204);
+
+    if (body["open"].get<bool>())
+    {
+        if (mOpenTabs.size() >= kMaxOpenTabs && !mOpenTabs.contains(id))
+        {
+            logRefusal(400, "too_many_pages");
+
+            return makeBadRequestResponse();
+        }
+
+        mOpenTabs.insert(id);
+
+        // A page that is open ends the wait that a close started (a reload).
+        response.mPageOpened = true;
+
+        return response;
+    }
+
+    mOpenTabs.erase(id);
+
+    // The last page closed: the server waits for a page to come back, then stops.
+    response.mLastPageClosed = mOpenTabs.empty();
+
+    return response;
 }
 
 HttpResponse Routes::staticFile(const HttpRequest& aRequest, std::string_view aPath) const {

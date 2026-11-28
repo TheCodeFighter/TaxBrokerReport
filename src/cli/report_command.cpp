@@ -58,6 +58,7 @@ Usage:
                    [--trade-republic FILE...] [--ibkr FILE...]
   taxbroker report --help
   taxbroker --help
+  taxbroker --version
 
 Commands:
   report    Write the tax forms Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr for one year.
@@ -2195,6 +2196,20 @@ int runCli(std::span<const std::string> aArguments,
     if (command == "-h" || command == "--help" || command == "help")
     {
         aOut << kGeneralHelp;
+        return kExitSuccess;
+    }
+
+    if (command == "--version")
+    {
+        // Only the version alone: another argument is a mistake, not a second request.
+        if (aArguments.size() > 1)
+        {
+            aErr << "taxbroker: --version takes no other argument.\n"
+                 << "Run 'taxbroker --help' for the commands.\n";
+            return kExitFailure;
+        }
+
+        aOut << buildInfoText() << '\n';
         return kExitSuccess;
     }
 
