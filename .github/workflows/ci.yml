@@ -84,6 +84,227 @@ jobs:
       - name: Check the public API boundary
         run: scripts/test.sh --reuse-build --suite boundary
 
+  # The native jobs build the backend without Docker on Windows (MSVC) and macOS (AppleClang) and
+  # run the unit and boundary tests, so a Windows or macOS portability error shows here and not
+  # first in a release build. Development stays in Docker; native builds exist only in CI. The
+  # dependencies come from vcpkg (vcpkg.json), cloned at the pinned commit (the builtin-baseline).
+  # A pull request that changes only frontend, docs or Markdown files skips the steps; a push to
+  # main and the release workflow always run them. The runner labels are fixed on purpose (a
+  # `latest` label moves to a new image without notice) and are raised by hand.
+  native:
+    # Keep these names stable: the main-branch protection rule should require these checks.
+    name: Native build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            runner: windows-2022
+            triplet: x64-windows-static
+          - name: macOS
+            runner: macos-26
+            triplet: arm64-osx
+    env:
+      VCPKG_DISABLE_METRICS: 1
+      TRIPLET: ${{ matrix.triplet }}
+      # A test that blocks must fail by itself, not hold the job until the job time limit.
+      CTEST_TIMEOUT: 120
+      # The out-of-memory tests skip when the allocation hook does not run: fail instead.
+      TBR_REQUIRE_ALLOCATION_HOOK: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for related changes
+        id: changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          # Only these paths skip the job; any other path (an unknown one too) runs the steps.
+          skipped='^(frontend/.*|docs/.*|.*\.md)$'
+          changed="$(git diff --name-only "$BASE_SHA...HEAD")"
+
+          if [[ -n "$changed" ]] && ! grep -Evq "$skipped" <<< "$changed"; then
+              echo "Skipped: only frontend, docs or Markdown files changed."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+              echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show the line end setting of the checkout
+        if: steps.changes.outputs.run == 'true' && runner.os == 'Windows'
+        shell: bash
+        run: git config --show-origin core.autocrlf || echo "core.autocrlf is not set"
+
+      # The runner's own vcpkg moves with the image, so vcpkg is fetched at the commit that
+      # vcpkg.json names (the builtin-baseline). Only that one commit is fetched.
+      - name: Read the vcpkg commit
+        id: vcpkg
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          sha="$(jq -r '."builtin-baseline"' vcpkg.json)"
+
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "vcpkg.json has no builtin-baseline commit SHA" >&2
+              exit 1
+          fi
+
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # ImageOS and ImageVersion are runner variables, which the expressions cannot read.
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "root=$RUNNER_TEMP/vcpkg" >> "$GITHUB_OUTPUT"
+          echo "cache=$RUNNER_TEMP/vcpkg-binary-cache" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch vcpkg
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        env:
+          VCPKG_SHA: ${{ steps.vcpkg.outputs.sha }}
+          VCPKG_ROOT_DIR: ${{ steps.vcpkg.outputs.root }}
+        run: |
+          mkdir -p "$VCPKG_ROOT_DIR"
+          cd "$VCPKG_ROOT_DIR"
+          git init --quiet
+          git remote add origin https://github.com/microsoft/vcpkg.git
+          git fetch --depth 1 origin "$VCPKG_SHA"
+          git checkout --quiet FETCH_HEAD
+
+          if [[ "$(git rev-parse HEAD)" != "$VCPKG_SHA" ]]; then
+              echo "vcpkg is not at the commit of vcpkg.json" >&2
+              exit 1
+          fi
+
+      - name: Bootstrap vcpkg (Windows)
+        if: steps.changes.outputs.run == 'true' && runner.os == 'Windows'
+        shell: cmd
+        run: '"%RUNNER_TEMP%\vcpkg\bootstrap-vcpkg.bat" -disableMetrics'
+
+      - name: Bootstrap vcpkg (macOS)
+        if: steps.changes.outputs.run == 'true' && runner.os == 'macOS'
+        shell: bash
+        run: '"$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics'
+
+      # The cache holds the packages vcpkg builds. The key has the image version, the triplet,
+      # the vcpkg commit and the manifest, with no fallback to an older key. A pull request
+      # writes only its own cache scope, so it cannot change the cache of main.
+      - name: Cache the vcpkg packages
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.vcpkg.outputs.cache }}
+          key: vcpkg-${{ steps.vcpkg.outputs.image }}-${{ matrix.triplet }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        env:
+          VCPKG_ROOT_DIR: ${{ steps.vcpkg.outputs.root }}
+          VCPKG_CACHE_DIR: ${{ steps.vcpkg.outputs.cache }}
+        run: |
+          mkdir -p "$VCPKG_CACHE_DIR"
+          export VCPKG_DEFAULT_BINARY_CACHE="$VCPKG_CACHE_DIR"
+          export VCPKG_BINARY_SOURCES="clear;files,$VCPKG_CACHE_DIR,readwrite"
+          export VCPKG_ROOT="$VCPKG_ROOT_DIR"
+
+          # Windows: the Visual Studio 2022 generator for x64. macOS: the default generator and the
+          # first macOS version of arm64, so a library feature that is newer fails here.
+          if [[ "$RUNNER_OS" == Windows ]]; then
+              platform_options=(-G "Visual Studio 17 2022" -A x64)
+          else
+              platform_options=(-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0)
+          fi
+
+          # A GitHub download can fail with an HTTP error, so the configure runs up to three times.
+          for attempt in 1 2 3; do
+              if cmake -S . -B build/native "${platform_options[@]}" \
+                  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+                  -DVCPKG_TARGET_TRIPLET="$TRIPLET" \
+                  -DCMAKE_REQUIRE_FIND_PACKAGE_LibXml2=ON \
+                  -DCMAKE_BUILD_TYPE=Debug; then
+                  exit 0
+              fi
+
+              echo "Configure attempt $attempt failed." >&2
+          done
+
+          exit 1
+
+      - name: Build
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          cmake --build build/native --config Debug --parallel \
+              --target taxbroker_unit_tests taxbroker taxbroker_server
+
+      - name: Run the unit tests
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          ctest --test-dir build/native -C Debug -L '^unit$' --output-on-failure \
+              --no-tests=error --timeout "$CTEST_TIMEOUT"
+
+      - name: Run the boundary tests
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          ctest --test-dir build/native -C Debug -L '^boundary$' --output-on-failure \
+              --no-tests=error --timeout "$CTEST_TIMEOUT"
+
+      # The unit tests are another program: start the two programs that users run.
+      - name: Start the programs
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          bin="$(find build/native -type f \( -name taxbroker -o -name taxbroker.exe \) | head -n 1)"
+          server="$(find build/native -type f \( -name taxbroker_server -o -name taxbroker_server.exe \) | head -n 1)"
+
+          if [[ -z "$bin" || -z "$server" ]]; then
+              echo "taxbroker or taxbroker_server was not built" >&2
+              exit 1
+          fi
+
+          echo "$bin"
+          echo "$server"
+          "$bin" --version
+          "$server" --version
+          echo "SERVER_BINARY=$server" >> "$GITHUB_ENV"
+
+      - name: Check the hardening of the server (Windows)
+        if: steps.changes.outputs.run == 'true' && runner.os == 'Windows'
+        shell: bash
+        run: |
+          vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+          dumpbin="$("$vswhere" -latest -find 'VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe' | head -n 1)"
+
+          "$dumpbin" -nologo -headers -loadconfig "$SERVER_BINARY" > dumpbin.txt
+          grep -iE "guard|CET|dynamic base|high entropy|NX compatible" dumpbin.txt || true
+
+          # Control Flow Guard and CET compatibility must be switched on in the built program.
+          grep -iE "CF Instrumented|Control Flow Guard" dumpbin.txt
+          grep -iE "CET compatible|CETCOMPAT|CET Shadow Stack" dumpbin.txt
+
+      - name: Check the deployment target of the server (macOS)
+        if: steps.changes.outputs.run == 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          otool -l "$SERVER_BINARY" | grep -A3 LC_BUILD_VERSION
+          otool -l "$SERVER_BINARY" | grep -E "minos 11\.0"
+
   production-image:
     # Keep this name stable: the main-branch protection rule should require this check.
     name: Production image

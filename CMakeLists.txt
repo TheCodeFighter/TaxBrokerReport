@@ -6,11 +6,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
-    add_compile_options(/W4 /WX)
+    # /utf-8: the sources hold UTF-8 text (Slovenian letters) and spdlog's fmt needs it. /sdl and
+    # /guard:cf (Control Flow Guard) are on in every build, so the tests run the code that ships.
+    add_compile_options(/W4 /WX /utf-8 /sdl /guard:cf)
+    # CET shadow stack, and system DLLs only from the system folder, so a planted DLL next to the
+    # program is not loaded. ASLR, high-entropy ASLR and DEP are on by default.
+    add_link_options(/guard:cf /CETCOMPAT /DEPENDENTLOADFLAG:0x800)
+    # The static C runtime (/MT, /MTd), as the release is built; set before the dependencies so
+    # that every library of the build uses the same one (policy CMP0091).
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-missing-field-initializers)
 else() # GCC
     add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-missing-field-initializers)
+endif()
+
+if(WIN32)
+    # No min and max macros from windows.h (they break std::min), a small windows.h, and Windows
+    # 10 as the lowest version (Asio prints a message when it is not set).
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
 endif()
 
 # Option to build legacy QT GUI

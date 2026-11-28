@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "taxbrokerreport",
+  "builtin-baseline": "5d4a3dc90c0b3773f3bac81bf41297b54328f471",
+  "dependencies": [
+    "boost-headers",
+    "boost-asio",
+    "boost-beast",
+    "boost-multiprecision",
+    {
+      "name": "libxml2",
+      "default-features": false
+    }
+  ]
+}

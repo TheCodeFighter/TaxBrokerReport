@@ -47,6 +47,9 @@ To run them natively, install libxml2 with its headers:
 
 The application itself does not use libxml2.
 
+Native Windows and macOS builds run in CI only (the `Native build` jobs, see
+[docs/development.md](docs/development.md)); development stays in Docker on every host.
+
 ## Test data and privacy
 
 Do not commit real broker exports, credentials, account numbers, transaction IDs, or personal or

@@ -361,6 +361,83 @@ Under Valgrind a run is about 40 to 60 times slower. The built-in rates are scan
 once per process, so a command-line run pays the scan every time, while a test program that
 calls the command line hundreds of times pays it once.
 
+## Native builds (Windows and macOS)
+
+Development stays in Docker on every host: the scripts run the Linux dev image, also under Docker
+Desktop on Windows and macOS. There is no native build script. Native builds exist only in CI.
+Docker compiles only the Linux code, so the Windows and macOS branches (the secure private file,
+`BCryptGenRandom`, `getentropy`) and MSVC itself would never be built without them.
+
+The `Native build (Windows)` and `Native build (macOS)` jobs of `ci.yml` build the backend without
+Docker and run the tests. The runner labels are fixed (`windows-2022` with MSVC, `macos-26` with
+AppleClang on arm64) and are raised by hand: a `latest` label moves to a new image without notice.
+
+- **Dependencies:** `vcpkg.json` lists Boost (headers, Asio, Beast, Multiprecision) and libxml2
+  (tests only, without its default features). vcpkg itself is fetched at the commit that
+  `builtin-baseline` names (one commit, no history) and bootstrapped, so the versions do not move
+  with the runner image. spdlog, csv-parser, nlohmann_json, pugixml and GoogleTest come from
+  `FetchContent`, as in Docker. To raise the vcpkg baseline, change `builtin-baseline` in
+  `vcpkg.json` only; the jobs read it from there.
+- **Cache:** the built vcpkg packages are cached per runner image, triplet, vcpkg commit and
+  `vcpkg.json`; there is no fallback to an older key.
+- **Triplets:** `x64-windows-static` (the static C runtime, `/MT`, as the release is built) and
+  `arm64-osx`. `macos-26` is arm64 only.
+- **Build:** a Debug build in `build/native` of `taxbroker_unit_tests`, `taxbroker` and
+  `taxbroker_server`. Windows uses the Visual Studio 17 2022 generator, macOS the default one.
+  `CMAKE_REQUIRE_FIND_PACKAGE_LibXml2=ON` makes a missing libxml2 fail the job, so the XSD tests
+  never skip silently. MSVC builds with `/W4 /WX /utf-8 /sdl /guard:cf`, links with `/guard:cf
+  /CETCOMPAT /DEPENDENTLOADFLAG:0x800`, and macOS with deployment target 11.0, the same settings
+  the release will use.
+- **Tests:** `ctest -L '^unit$'` and `-L '^boundary$'`, each test with `--timeout 120`, and
+  `TBR_REQUIRE_ALLOCATION_HOOK=1` (the out-of-memory tests fail instead of skipping when the
+  allocation hook does not run). Integration tests, Valgrind, Cppcheck, coverage and the format
+  check stay Linux only.
+- **Programs:** `taxbroker --version` and `taxbroker_server --version` must exit with 0. On
+  Windows `dumpbin` must show Control Flow Guard and CET compatibility, on macOS `otool` must show
+  `minos 11.0`.
+- **Skips:** a pull request that changes only `frontend/`, `docs/` or Markdown files skips the
+  steps (the job still passes). A push to `main` and the release workflow always run every step.
+- **Line ends:** `.gitattributes` has `* -text`, so Git never changes a line end: a Windows
+  checkout would otherwise turn every file into CRLF and change the embedded resources and the
+  golden files.
+
+### Tests that are skipped natively
+
+A test that checks Linux-only behaviour is skipped with a reason that starts with
+`Not built yet:` (the Windows and macOS folders, browser opening and the rest of that work).
+`grep -rn 'GTEST_SKIP() << "Not built yet:' tests` lists them. A mode or link check is never
+skipped: on Windows the same rules are checked on the access list, the owner, symbolic links and
+junctions (`tests/unit/windows_private_file_test.cpp`).
+
+| Test | Where | Reason |
+| --- | --- | --- |
+| `LoggerFileTest` (three state-home tests) | Windows | the Windows state folder is not built yet: Linux `/h` paths are not absolute |
+| `StateFolderTest` (data home and launch file path tests) | Windows | the Windows state and data folders are not built yet |
+| `ProfileStoreTest` (two location tests) | Windows | the Windows data folder is not built yet |
+| `BrowserOpenTest.StartsXdgOpenWithTheFileAsItsOnlyArgument` | Windows, macOS | the browser opens with `xdg-open` on Linux only |
+| `StateFolderTest.FolderWhoseModeCannotBeChangedIsRefused...` | Windows, macOS | the test needs procfs, which exists on Linux only |
+| `WindowsPrivateFileTest` symbolic link tests, `WindowsPrivateFolderTest` owner tests | Windows | only when the runner may not make a symbolic link or set another owner |
+
+The POSIX mode and symbolic link tests of the profile store, the launch file and the state folder
+are built on Linux and macOS only; their Windows counterparts (access list, owner, link, junction)
+are in `tests/unit/windows_private_file_test.cpp`.
+
+The out-of-memory tests run natively with `TBR_REQUIRE_ALLOCATION_HOOK=1`; a platform whose
+allocation hook cannot work gets a listed `Not built yet:` skip instead of a silent one.
+
+### Known limits on Windows
+
+- The server socket sets `SO_EXCLUSIVEADDRUSE`, so no other program can take its port. A port
+  held that way cannot be bound again while connections accepted on it are still active: with a
+  fixed `TBR_SERVER_PORT`, a quick restart may get "the port is in use" for a short time. The
+  default port 0 picks a new port at every start.
+- The profile file is put in place with `MoveFileExW`, which fails while another program (a virus
+  scanner, the browser reading the launch file) holds the target open without delete sharing. The
+  old file then stays, the temporary file is deleted, and the save reports an error: no data is
+  lost.
+- The GitHub Windows runner runs as an administrator, so no test runs as a standard user. That is
+  checked by hand with `icacls` before the first Windows package.
+
 ## Test suites
 
 Unit and integration tests live in `tests/unit/` and `tests/integration/`, respectively, and use
