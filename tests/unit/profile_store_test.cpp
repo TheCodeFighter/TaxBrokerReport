@@ -280,13 +280,13 @@ TEST(ProfileStoreTest, TheLocationOfTheDefaultFolderStartsWithATilde) {
     GTEST_SKIP()
         << "Not built yet: the Windows data folder is not built yet: the test names a Linux path "
            "(/home/u), which is not absolute on Windows";
-#endif
-
+#else
     // A relative XDG_DATA_HOME is ignored.
     const ProfileStore store =
         ProfileStore::forUser(envOf({{"XDG_DATA_HOME", "data"}, {"HOME", "/home/u"}}));
 
     EXPECT_EQ(store.location(), "~/.local/share/taxbroker/profile.json");
+#endif
 }
 
 TEST(ProfileStoreTest, TheLocationOfADataFolderUnderHomeStartsWithATilde) {
@@ -294,12 +294,12 @@ TEST(ProfileStoreTest, TheLocationOfADataFolderUnderHomeStartsWithATilde) {
     GTEST_SKIP()
         << "Not built yet: the Windows data folder is not built yet: the test names a Linux path "
            "(/home/u), which is not absolute on Windows";
-#endif
-
+#else
     const ProfileStore store =
         ProfileStore::forUser(envOf({{"XDG_DATA_HOME", "/home/u/data"}, {"HOME", "/home/u"}}));
 
     EXPECT_EQ(store.location(), "~/data/taxbroker/profile.json");
+#endif
 }
 
 TEST(ProfileStoreTest, TheLocationIsLeftOutWhenHomeIsNotAbsolute) {

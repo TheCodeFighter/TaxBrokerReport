@@ -117,10 +117,10 @@ TEST(StateFolderTest, AbsoluteDataHomeIsUsed) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/data, /home/someone), which is not absolute on Windows";
-#endif
-
+#else
     EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "/data"}, {"HOME", "/home/someone"}})),
               std::filesystem::path("/data/taxbroker"));
+#endif
 }
 
 TEST(StateFolderTest, RelativeDataHomeIsIgnoredAndHomeIsUsed) {
@@ -128,11 +128,11 @@ TEST(StateFolderTest, RelativeDataHomeIsIgnoredAndHomeIsUsed) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/home/someone), which is not absolute on Windows";
-#endif
-
+#else
     // XDG says a relative XDG_DATA_HOME is ignored.
     EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "relative/data"}, {"HOME", "/home/someone"}})),
               std::filesystem::path("/home/someone/.local/share/taxbroker"));
+#endif
 }
 
 TEST(StateFolderTest, MissingHomeThrowsWithoutAValueForTheDataFolder) {
@@ -154,11 +154,11 @@ TEST(StateFolderTest, LaunchFileIsInTheRuntimeFolderWhenThereIsOne) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/run/user/1000), which is not absolute on Windows";
-#endif
-
+#else
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(),
                              envOf({{"XDG_RUNTIME_DIR", "/run/user/1000"}, {"HOME", "/home/a"}})),
               std::filesystem::path("/run/user/1000/taxbroker/launch.html"));
+#endif
 }
 
 TEST(StateFolderTest, LaunchFileIsInTheStateFolderWithoutARuntimeFolder) {
@@ -166,10 +166,10 @@ TEST(StateFolderTest, LaunchFileIsInTheStateFolderWithoutARuntimeFolder) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/home/a), which is not absolute on Windows";
-#endif
-
+#else
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(), envOf({{"HOME", "/home/a"}})),
               std::filesystem::path("/home/a/.local/state/taxbroker/launch.html"));
+#endif
 }
 
 TEST(StateFolderTest, RelativeRuntimeFolderIsIgnored) {
@@ -177,11 +177,11 @@ TEST(StateFolderTest, RelativeRuntimeFolderIsIgnored) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/home/a), which is not absolute on Windows";
-#endif
-
+#else
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(),
                              envOf({{"XDG_RUNTIME_DIR", "run"}, {"HOME", "/home/a"}})),
               std::filesystem::path("/home/a/.local/state/taxbroker/launch.html"));
+#endif
 }
 
 TEST(StateFolderTest, NewPrivateFolderIsMadeWithItsParents) {
@@ -285,7 +285,6 @@ TEST(EnvironmentTest, AnEmptyVariableIsNotSetOnWindows) {
 }
 
 #else
-
 TEST(EnvironmentTest, AnEmptyVariableIsReadAsEmptyText) {
     test::setTestEnvironment("TBR_TEST_VALUE", "");
 

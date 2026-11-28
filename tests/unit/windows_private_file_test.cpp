@@ -202,7 +202,7 @@ bool enablePrivilege(const wchar_t* aName) {
 
 /// Gives the folder another owner. False when the process may not do that.
 bool setOwner(const std::filesystem::path& aFolder, std::vector<unsigned char>& aSid) {
-    if (!enablePrivilege(SE_RESTORE_NAME) || !enablePrivilege(SE_TAKE_OWNERSHIP_NAME))
+    if (!enablePrivilege(L"SeRestorePrivilege") || !enablePrivilege(L"SeTakeOwnershipPrivilege"))
     {
         return false;
     }

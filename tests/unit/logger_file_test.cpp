@@ -90,11 +90,11 @@ TEST(LoggerFileTest, TheFileIsInTheStateHomeWhenItIsAbsolute) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/h, /s), which is not absolute on Windows";
-#endif
-
+#else
     const auto file = logFilePath(envOf({{"XDG_STATE_HOME", "/s"}, {"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/s/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, TheFileIsInTheHomeStateFolderWithoutAStateHome) {
@@ -102,11 +102,11 @@ TEST(LoggerFileTest, TheFileIsInTheHomeStateFolderWithoutAStateHome) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/h, /s), which is not absolute on Windows";
-#endif
-
+#else
     const auto file = logFilePath(envOf({{"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/h/.local/state/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, ARelativeStateHomeIsIgnored) {
@@ -114,11 +114,11 @@ TEST(LoggerFileTest, ARelativeStateHomeIsIgnored) {
     GTEST_SKIP()
         << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
            "(/h, /s), which is not absolute on Windows";
-#endif
-
+#else
     const auto file = logFilePath(envOf({{"XDG_STATE_HOME", "rel"}, {"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/h/.local/state/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, WithoutAnAbsoluteHomeThereIsNoFile) {

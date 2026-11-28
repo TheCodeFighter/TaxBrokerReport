@@ -241,7 +241,7 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         });
 
         const auto response = nlohmann::json::parse(api::serializeDiagnosticsJson(parseResult));
-        EXPECT_EQ(response.at("diagnostics").at(0).at("code"), expected.mJsonValue);
+        EXPECT_EQ(response.at("diagnostics").at(0).at("code"), std::string{expected.mJsonValue});
     }
 }
 
