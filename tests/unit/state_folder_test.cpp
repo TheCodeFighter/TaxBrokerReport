@@ -1,5 +1,9 @@
 #include "server/state_folder.hpp"
 
+#include "../support/test_environment.hpp"
+
+#include "taxbroker/environment.hpp"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -11,7 +15,9 @@
 #include <string>
 #include <system_error>
 
+#if !defined(_WIN32)
 #include <sys/stat.h>
+#endif
 
 namespace {
 using namespace taxbroker;
@@ -55,6 +61,8 @@ EnvLookup envOf(std::map<std::string, std::string> aValues) {
     };
 }
 
+#if !defined(_WIN32)
+
 /// The permission bits (rwx of owner, group, others) of a file.
 unsigned modeOf(const std::filesystem::path& aPath) {
     struct stat info{};
@@ -62,6 +70,8 @@ unsigned modeOf(const std::filesystem::path& aPath) {
 
     return info.st_mode & 0777U;
 }
+
+#endif
 
 /// The message of the std::runtime_error an action throws; a fixed text when it throws nothing.
 std::string messageOfThrow(const std::function<void()>& aAction) {
@@ -103,11 +113,23 @@ TEST(StateFolderTest, MissingHomeThrowsWithoutAValue) {
 }
 
 TEST(StateFolderTest, AbsoluteDataHomeIsUsed) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/data, /home/someone), which is not absolute on Windows";
+#endif
+
     EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "/data"}, {"HOME", "/home/someone"}})),
               std::filesystem::path("/data/taxbroker"));
 }
 
 TEST(StateFolderTest, RelativeDataHomeIsIgnoredAndHomeIsUsed) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/home/someone), which is not absolute on Windows";
+#endif
+
     // XDG says a relative XDG_DATA_HOME is ignored.
     EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "relative/data"}, {"HOME", "/home/someone"}})),
               std::filesystem::path("/home/someone/.local/share/taxbroker"));
@@ -128,29 +150,57 @@ TEST(StateFolderTest, LaunchFileFromTheConfigWins) {
 }
 
 TEST(StateFolderTest, LaunchFileIsInTheRuntimeFolderWhenThereIsOne) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/run/user/1000), which is not absolute on Windows";
+#endif
+
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(),
                              envOf({{"XDG_RUNTIME_DIR", "/run/user/1000"}, {"HOME", "/home/a"}})),
               std::filesystem::path("/run/user/1000/taxbroker/launch.html"));
 }
 
 TEST(StateFolderTest, LaunchFileIsInTheStateFolderWithoutARuntimeFolder) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/home/a), which is not absolute on Windows";
+#endif
+
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(), envOf({{"HOME", "/home/a"}})),
               std::filesystem::path("/home/a/.local/state/taxbroker/launch.html"));
 }
 
 TEST(StateFolderTest, RelativeRuntimeFolderIsIgnored) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/home/a), which is not absolute on Windows";
+#endif
+
     EXPECT_EQ(launchFilePath(configWithoutLaunchFile(),
                              envOf({{"XDG_RUNTIME_DIR", "run"}, {"HOME", "/home/a"}})),
               std::filesystem::path("/home/a/.local/state/taxbroker/launch.html"));
 }
 
-TEST(StateFolderTest, NewPrivateFolderHasModeSevenHundred) {
+TEST(StateFolderTest, NewPrivateFolderIsMadeWithItsParents) {
     const TempFolder temp("new_folder");
     const std::filesystem::path folder = temp.path() / "a" / "taxbroker";
 
     makePrivateFolder(folder);
 
     EXPECT_TRUE(std::filesystem::is_directory(folder));
+}
+
+#if !defined(_WIN32)
+
+TEST(StateFolderTest, NewPrivateFolderHasModeSevenHundred) {
+    const TempFolder temp("new_folder_mode");
+    const std::filesystem::path folder = temp.path() / "a" / "taxbroker";
+
+    makePrivateFolder(folder);
+
     EXPECT_EQ(modeOf(folder), 0700U);
 }
 
@@ -164,6 +214,8 @@ TEST(StateFolderTest, ExistingFolderGetsModeSevenHundred) {
 
     EXPECT_EQ(modeOf(folder), 0700U);
 }
+
+#endif
 
 TEST(StateFolderTest, SymbolicLinkIsRefusedWithoutThePathInTheMessage) {
     const TempFolder temp("link_folder");
@@ -185,6 +237,8 @@ TEST(StateFolderTest, FolderThatIsAFileIsRefusedWithoutThePathInTheMessage) {
               "cannot create the private folder");
 }
 
+#if !defined(_WIN32)
+
 TEST(StateFolderTest, FolderBelowAFileIsRefusedWithoutThePathInTheMessage) {
     const TempFolder temp("below_file");
     const std::filesystem::path file = temp.path() / "taxbroker";
@@ -195,10 +249,73 @@ TEST(StateFolderTest, FolderBelowAFileIsRefusedWithoutThePathInTheMessage) {
               "cannot check the private folder");
 }
 
+#endif
+
 TEST(StateFolderTest, FolderWhoseModeCannotBeChangedIsRefusedWithoutThePathInTheMessage) {
+#if !defined(__linux__)
+    GTEST_SKIP() << "procfs, the folder that refuses every mode change, exists on Linux only";
+#else
     // procfs never allows chmod, for any user, so the mode of this existing folder cannot be set.
     EXPECT_EQ(messageOfThrow([&]() { makePrivateFolder("/proc/1"); }),
               "cannot set the mode of the private folder");
+#endif
 }
+
+TEST(EnvironmentTest, ASetVariableIsRead) {
+    test::setTestEnvironment("TBR_TEST_VALUE", "abc");
+
+    EXPECT_EQ(readEnvironment("TBR_TEST_VALUE"), "abc");
+
+    test::unsetTestEnvironment("TBR_TEST_VALUE");
+}
+
+TEST(EnvironmentTest, AVariableThatIsNotSetGivesNothing) {
+    test::unsetTestEnvironment("TBR_TEST_VALUE");
+
+    EXPECT_EQ(readEnvironment("TBR_TEST_VALUE"), std::nullopt);
+}
+
+#if defined(_WIN32)
+
+TEST(EnvironmentTest, AnEmptyVariableIsNotSetOnWindows) {
+    // _wputenv_s with an empty value removes the variable, so there is nothing to read.
+    test::setTestEnvironment("TBR_TEST_VALUE", "");
+
+    EXPECT_EQ(readEnvironment("TBR_TEST_VALUE"), std::nullopt);
+}
+
+#else
+
+TEST(EnvironmentTest, AnEmptyVariableIsReadAsEmptyText) {
+    test::setTestEnvironment("TBR_TEST_VALUE", "");
+
+    EXPECT_EQ(readEnvironment("TBR_TEST_VALUE"), "");
+
+    test::unsetTestEnvironment("TBR_TEST_VALUE");
+}
+
+#endif
+
+TEST(EnvironmentTest, AValueIsReadAsUtf8) {
+    // "\xC4\x8D" is the UTF-8 text of the letter c with a caron.
+    test::setTestEnvironment("TBR_TEST_VALUE", "\xC4\x8D");
+
+    EXPECT_EQ(readEnvironment("TBR_TEST_VALUE"), "\xC4\x8D");
+
+    test::unsetTestEnvironment("TBR_TEST_VALUE");
+}
+
+TEST(EnvironmentTest, APathFromUtf8KeepsTheLetter) {
+    // Two UTF-8 bytes are one character of the path on every platform.
+    EXPECT_TRUE(pathFromUtf8("/tmp/\xC4\x8D").u8string() == u8"/tmp/\u010D");
+}
+
+#if defined(_WIN32)
+
+TEST(EnvironmentTest, APathFromUtf8IsWideOnWindows) {
+    EXPECT_EQ(pathFromUtf8("C:\\\xC4\x8D").native(), L"C:\\\u010D");
+}
+
+#endif
 
 } // namespace

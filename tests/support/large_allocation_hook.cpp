@@ -1,12 +1,15 @@
 #include "large_allocation_hook.hpp"
 
 #include "taxbroker/diagnostic_messages.hpp"
+#include "taxbroker/environment.hpp"
 #include "parsers/reference_catalogue.hpp"
 
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <new>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -46,9 +49,9 @@ bool allocationHookRuns() {
 }
 
 bool allocationHookIsRequired() {
-    const char* required = std::getenv("TBR_REQUIRE_ALLOCATION_HOOK");
+    const std::optional<std::string> required = readEnvironment("TBR_REQUIRE_ALLOCATION_HOOK");
 
-    return required != nullptr && std::string_view{required} == "1";
+    return required.has_value() && *required == "1";
 }
 
 ScopedLargeAllocationHook::ScopedLargeAllocationHook(std::function<void()> aAction) {

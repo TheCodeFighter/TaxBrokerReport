@@ -12,7 +12,9 @@
 #include <string>
 #include <system_error>
 
+#if !defined(_WIN32)
 #include <sys/stat.h>
+#endif
 
 namespace {
 using namespace taxbroker;
@@ -63,6 +65,8 @@ std::string readAll(const std::filesystem::path& aPath) {
     return content.str();
 }
 
+#if !defined(_WIN32)
+
 /// The permission bits of a file or folder, for example 0600.
 unsigned modeOf(const std::filesystem::path& aPath) {
     struct stat info{};
@@ -71,6 +75,8 @@ unsigned modeOf(const std::filesystem::path& aPath) {
 
     return info.st_mode & 07777U;
 }
+
+#endif
 
 /// The text of the exception that the call throws, or "no exception".
 std::string messageOfThrow(const std::function<void()>& aCall) {
@@ -107,8 +113,12 @@ TEST(ProfileStoreTest, WriteMakesAPrivateFolderAndAPrivateFileWithTheExactConten
     store.write(content);
 
     EXPECT_EQ(readAll(temp.path() / "data" / "taxbroker" / "profile.json"), content);
+
+#if !defined(_WIN32)
+    // On Windows the access lists are checked in windows_private_file_test.cpp.
     EXPECT_EQ(modeOf(temp.path() / "data" / "taxbroker"), 0700U);
     EXPECT_EQ(modeOf(temp.path() / "data" / "taxbroker" / "profile.json"), 0600U);
+#endif
 }
 
 TEST(ProfileStoreTest, WriteLeavesNoTemporaryFile) {
@@ -119,6 +129,19 @@ TEST(ProfileStoreTest, WriteLeavesNoTemporaryFile) {
 
     EXPECT_FALSE(std::filesystem::exists(temp.path() / "taxbroker" / "profile.json.tmp"));
 }
+
+TEST(ProfileStoreTest, WriteReplacesAnOldFile) {
+    const TempFolder temp("replace_content");
+    const std::filesystem::path file = temp.path() / "profile.json";
+    const ProfileStore store(file, std::nullopt);
+
+    store.write(R"({"a":1})");
+    store.write(R"({"a":2})");
+
+    EXPECT_EQ(readAll(file), R"({"a":2})");
+}
+
+#if !defined(_WIN32)
 
 TEST(ProfileStoreTest, WriteReplacesAnOldFileAndMakesItPrivate) {
     const TempFolder temp("replace");
@@ -133,6 +156,8 @@ TEST(ProfileStoreTest, WriteReplacesAnOldFileAndMakesItPrivate) {
     EXPECT_EQ(readAll(file), "new content");
     EXPECT_EQ(modeOf(file), 0600U);
 }
+
+#endif
 
 TEST(ProfileStoreTest, WriteRefusesASymbolicLinkAndLeavesItsTarget) {
     const TempFolder temp("write_link");
@@ -185,6 +210,8 @@ TEST(ProfileStoreTest, WriteThrowsAndRemovesTheTemporaryFileWhenTheFileCannotBeR
     EXPECT_TRUE(std::filesystem::exists(temp.path() / "profile.json" / "inside.txt"));
 }
 
+#if !defined(_WIN32)
+
 TEST(ProfileStoreTest, ReadRefusesASymbolicLink) {
     const TempFolder temp("read_link");
     const std::filesystem::path target = temp.path() / "target.txt";
@@ -195,6 +222,8 @@ TEST(ProfileStoreTest, ReadRefusesASymbolicLink) {
 
     EXPECT_EQ(messageOfThrow([&]() { (void)store.read(100); }), "cannot open the profile file");
 }
+
+#endif
 
 TEST(ProfileStoreTest, ReadRefusesAFolder) {
     const TempFolder temp("read_folder");
@@ -247,6 +276,12 @@ TEST(ProfileStoreTest, TheLocationOfAFileOutsideHomeIsLeftOut) {
 }
 
 TEST(ProfileStoreTest, TheLocationOfTheDefaultFolderStartsWithATilde) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows data folder is not built yet: the test names a Linux path "
+           "(/home/u), which is not absolute on Windows";
+#endif
+
     // A relative XDG_DATA_HOME is ignored.
     const ProfileStore store =
         ProfileStore::forUser(envOf({{"XDG_DATA_HOME", "data"}, {"HOME", "/home/u"}}));
@@ -255,6 +290,12 @@ TEST(ProfileStoreTest, TheLocationOfTheDefaultFolderStartsWithATilde) {
 }
 
 TEST(ProfileStoreTest, TheLocationOfADataFolderUnderHomeStartsWithATilde) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows data folder is not built yet: the test names a Linux path "
+           "(/home/u), which is not absolute on Windows";
+#endif
+
     const ProfileStore store =
         ProfileStore::forUser(envOf({{"XDG_DATA_HOME", "/home/u/data"}, {"HOME", "/home/u"}}));
 
