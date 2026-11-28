@@ -87,6 +87,10 @@ std::variant<ServerConfig, std::string> readServerConfig(const EnvLookup& aEnv) 
     return config;
 }
 
+bool isVersionRequest(std::span<const std::string> aArguments) {
+    return aArguments.size() == 1 && aArguments.front() == "--version";
+}
+
 bool isLoopbackHost(std::string_view aHost) {
     return aHost == "127.0.0.1" || aHost == "localhost";
 }

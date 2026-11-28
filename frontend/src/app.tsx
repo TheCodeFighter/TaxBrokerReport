@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
-import { createApiClient } from "./api/client";
+import { createApiClient, type SessionEndReason } from "./api/client";
 import { loadVersion } from "./api/version";
 import { readLanguage, saveLanguage } from "./i18n/language";
 import { createMessageLoader, type MessageCatalogue } from "./i18n/messages";
@@ -10,16 +10,22 @@ import { AboutPage } from "./screens/about_page";
 import { SupportPage } from "./screens/support_page";
 import { HomePage } from "./screens/home_page";
 import { ManualPage } from "./screens/manual_page";
+import { QuitControl } from "./screens/quit_control";
 import { RunScreen } from "./screens/run_screen";
 import { startSession, type SessionState } from "./session/login";
+import { closeThisTab } from "./session/quit";
+import { createTabReporter, makeTabId } from "./session/tabs";
 import { otherTheme, readTheme, saveTheme, type Theme } from "./theme/theme";
 import logoUrl from "./assets/logo.webp";
 
-type Screen = "checking" | SessionState;
+/** `server_stopped`: the server cannot be reached. `quit`: the user stopped the program here. */
+type Screen = "checking" | "server_stopped" | "quit" | SessionState;
 
 /** The title and the text of each screen; one message and one action per screen. */
 const screenTexts: Record<Exclude<Screen, "ready">, { title: UiTextKey; body: UiTextKey }> = {
   checking: { title: "checkingTitle", body: "checkingBody" },
+  server_stopped: { title: "serverStoppedTitle", body: "serverStoppedBody" },
+  quit: { title: "quitStoppedTitle", body: "quitStoppedBody" },
   session_ended: { title: "sessionEndedTitle", body: "sessionEndedBody" },
   link_invalid: { title: "linkInvalidTitle", body: "linkInvalidBody" },
 };
@@ -65,9 +71,15 @@ export function App() {
   const [version, setVersion] = useState<string | null | undefined>();
   const shownPage = useRef(page);
 
-  // One client for the page: a 401 or a lost server anywhere ends the session here.
+  // One client for the page: a 401 or a lost server anywhere ends the session here. A lost server
+  // after the user chose Quit keeps the screen of the quit.
   const client = useMemo(
-    () => createApiClient((path, init) => window.fetch(path, init), () => setScreen("session_ended")),
+    () =>
+      createApiClient((path, init) => window.fetch(path, init), (reason: SessionEndReason) =>
+        setScreen((current) =>
+          current === "quit" ? current : reason === "unreachable" ? "server_stopped" : "session_ended",
+        ),
+      ),
     [],
   );
   const loadCatalogue = useMemo(() => createMessageLoader(client.apiFetch), [client]);
@@ -93,6 +105,27 @@ export function App() {
       cancelled = true;
     };
   }, [client]);
+
+  // The server stops when the last page is closed: tell it when this page is open and closed. A
+  // page restored from the browser's back/forward cache is open again (`pageshow`).
+  useEffect(() => {
+    if (screen !== "ready") {
+      return undefined;
+    }
+
+    const reporter = createTabReporter(client.send, makeTabId((bytes) => window.crypto.getRandomValues(bytes)));
+    const onShow = () => reporter.open();
+    const onHide = () => reporter.close();
+
+    reporter.open();
+    window.addEventListener("pageshow", onShow);
+    window.addEventListener("pagehide", onHide);
+
+    return () => {
+      window.removeEventListener("pageshow", onShow);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [screen, client]);
 
   // The message texts load once after the login; the screens with diagnostics use them.
   useEffect(() => {
@@ -161,6 +194,12 @@ export function App() {
           </nav>
         ) : null}
         <div class="header-controls">
+          {texts === undefined ? (
+            <QuitControl language={language} apiFetch={client.apiFetch} onStopped={() => {
+                setScreen("quit");
+                closeThisTab(() => window.close());
+              }} />
+          ) : null}
           <div class="language-switch" role="group" aria-label={uiText(language, "languageLabel")}>
             {languages.map((code) => (
               <button

@@ -6,10 +6,15 @@ export interface ApiInit {
   headers?: Record<string, string>;
   /** A text, or a `FormData` for an upload: the browser sets its own `Content-Type` with the boundary. */
   body?: string | FormData;
+  /** True lets the call finish while the page unloads (the close message of a tab). */
+  keepalive?: boolean;
 }
 
 /** The part of `fetch` that the client needs, so the tests pass their own. */
 export type FetchFunction = (path: string, init: RequestInit) => Promise<Response>;
+
+/** Why the session ended: the server refused the cookie (401), or it cannot be reached. */
+export type SessionEndReason = "unauthorized" | "unreachable";
 
 /** Thrown when the session has ended: the server said 401 or cannot be reached. */
 export class SessionEndedError extends Error {
@@ -24,19 +29,23 @@ export interface ApiClient {
   send(path: string, init?: ApiInit): Promise<Response>;
   /**
    * A call of a signed-in screen. A 401 or a network error ends the session in one place: the
-   * callback runs once, this call throws SessionEndedError, and later calls send nothing.
+   * callback runs once with the reason, this call throws SessionEndedError, and later calls send
+   * nothing.
    */
   apiFetch(path: string, init?: ApiInit): Promise<Response>;
   isSessionEnded(): boolean;
 }
 
-export function createApiClient(fetchFunction: FetchFunction, onSessionEnded: () => void): ApiClient {
+export function createApiClient(
+  fetchFunction: FetchFunction,
+  onSessionEnded: (reason: SessionEndReason) => void,
+): ApiClient {
   let ended = false;
 
-  const end = (): SessionEndedError => {
+  const end = (reason: SessionEndReason): SessionEndedError => {
     if (!ended) {
       ended = true;
-      onSessionEnded();
+      onSessionEnded(reason);
     }
 
     return new SessionEndedError();
@@ -59,11 +68,11 @@ export function createApiClient(fetchFunction: FetchFunction, onSessionEnded: ()
     try {
       response = await send(path, init);
     } catch {
-      throw end();
+      throw end("unreachable");
     }
 
     if (response.status === 401) {
-      throw end();
+      throw end("unauthorized");
     }
 
     return response;

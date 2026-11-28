@@ -9,10 +9,19 @@
 #include <spdlog/spdlog.h>
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 int main(int aArgc, char** aArgv) {
-    (void)aArgc;
-    (void)aArgv;
+    const std::vector<std::string> arguments(aArgv + 1, aArgv + aArgc);
+
+    // Before the logger: the version starts nothing (no log file, no server, no launch file).
+    if (taxbroker::isVersionRequest(arguments))
+    {
+        std::cout << taxbroker::buildInfoText() << '\n';
+
+        return 0;
+    }
 
     // Called just one time!
     taxbroker::InitializeLogger();
@@ -22,6 +31,10 @@ int main(int aArgc, char** aArgv) {
     hooks.mOpener = taxbroker::openInBrowser;
     hooks.mHandleSignals = true;
     hooks.mMaxFileBytes = taxbroker::kMaxInputFileBytes;
+
+    hooks.mNoLoginLimit = taxbroker::kNoLoginLimit;
+    hooks.mIdleLimit = taxbroker::kIdleLimit;
+    hooks.mClosedPageLimit = taxbroker::kClosedPageLimit;
 
     const int exitCode =
         taxbroker::StartServer(taxbroker::systemEnvironment(), std::cout, std::cerr, hooks);

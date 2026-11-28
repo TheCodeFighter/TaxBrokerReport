@@ -17,7 +17,16 @@ struct HttpServerOptions {
         mTimeout{};             ///< Longest wait to read, write or between chunks; always set.
     std::size_t mHeaderLimit{}; ///< Largest request header block in bytes; always set.
     std::uint64_t mBodyLimit{}; ///< Body limit without a body policy; always set.
-    bool mHandleSignals{};      ///< True: SIGINT and SIGTERM stop `run`.
+    bool mHandleSignals{};      ///< True: SIGINT, SIGTERM and (not Windows) SIGHUP stop `run`.
+    /// `run` stops when no response with `mSessionUsed` was written this long after it started;
+    /// zero means no limit. Always set.
+    std::chrono::milliseconds mNoLoginLimit{};
+    /// `run` stops when this long passes after a response with `mSessionUsed` and no other one
+    /// follows; zero means no limit. Always set.
+    std::chrono::milliseconds mIdleLimit{};
+    /// `run` stops when this long passes after a response with `mLastPageClosed` and no response
+    /// with `mPageOpened` follows (a reload makes one); zero means no limit. Always set.
+    std::chrono::milliseconds mClosedPageLimit{};
 };
 
 /// A small HTTP/1.1 server on Boost.Beast. One thread runs every connection, so the handler is
@@ -46,9 +55,10 @@ class HttpServer {
     /// The port that is bound; the real one when 0 was asked for.
     [[nodiscard]] std::uint16_t port() const;
 
-    /// Serves on the calling thread until `stop` or a signal. Closes the listening socket at the
-    /// end. A request with `Expect: 100-continue` gets the `100 Continue` only when the policy
-    /// says the guard passed.
+    /// Serves on the calling thread until `stop`, a signal, the quit of a response
+    /// (`mStopAfterWrite`, after it is written) or one of the three limits. Closes the listening
+    /// socket at the end. A request with `Expect: 100-continue` gets the `100 Continue` only when
+    /// the policy says the guard passed.
     void run(Handler aHandler, BodyPolicyFunction aBodyPolicy = {});
 
     /// Ends `run`. Safe to call from any thread, once `run` was called or is about to be.

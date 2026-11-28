@@ -134,9 +134,71 @@ body {
   color: var(--color-primary);
 }
 
+/* Quit the program: a text button like the language buttons; its question opens under the header. */
+.quit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2.25rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-on-primary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-on-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The thin line between the power symbol and the text. */
+.quit-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-1) 0;
+  background: var(--color-on-primary);
+  opacity: 0.6;
+}
+
+.quit-button:hover {
+  box-shadow: inset 0 0 0 1px var(--color-on-primary);
+}
+
+.quit-box {
+  position: absolute;
+  top: 100%;
+  right: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  max-width: min(24rem, 100% - 2 * var(--space-3));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.quit-box p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.quit-box .quit-failed {
+  color: var(--color-error);
+}
+
+.quit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* The header is green in both themes, so its focus ring is light. */
 .header :focus-visible {
   outline-color: var(--color-on-primary);
+}
+
+/* The quit question has a light background, so it keeps the normal ring. */
+.header .quit-box :focus-visible {
+  outline-color: var(--color-focus);
 }
 
 .screen {

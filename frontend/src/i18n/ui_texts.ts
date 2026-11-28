@@ -316,6 +316,21 @@ export const uiTexts = {
     sl: "Seja je končana ali aplikacija ni več zagnana. Zaženite aplikacijo in odprite novo povezavo, ki jo izpiše.",
     en: "The session has ended or the application is no longer running. Start the application and open the new link that it prints.",
   },
+  serverStoppedTitle: { sl: "Program ne teče več", en: "The program is no longer running" },
+  serverStoppedBody: { sl: "Zaženite ga znova.", en: "Start it again." },
+  quitButton: { sl: "Izklopi program", en: "Quit the program" },
+  quitWarning: {
+    sl: "Neshranjeni rezultati se izgubijo.",
+    en: "Results you have not downloaded are lost.",
+  },
+  quitCancel: { sl: "Prekliči", en: "Cancel" },
+  quitConfirm: { sl: "Izklopi", en: "Quit" },
+  quitFailed: {
+    sl: "Programa ni bilo mogoče izklopiti.",
+    en: "The program could not be stopped.",
+  },
+  quitStoppedTitle: { sl: "Program je izklopljen", en: "The program has stopped" },
+  quitStoppedBody: { sl: "Ta zavihek lahko zaprete.", en: "You can close this tab." },
   linkInvalidTitle: { sl: "Povezava ne velja več", en: "The link is no longer valid" },
   linkInvalidBody: {
     sl: "Povezava deluje samo enkrat in 2 minuti. Ustavite aplikacijo, jo znova zaženite in odprite novo povezavo, ki jo izpiše.",

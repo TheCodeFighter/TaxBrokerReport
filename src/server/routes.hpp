@@ -12,15 +12,16 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
 
 namespace taxbroker {
 
-/// The routes of the local server: the browser login, the frontend files, the message texts and
-/// the run API and the saved profile. They have no sockets, so the tests call `handle` directly.
-/// The calls come from one thread.
+/// The routes of the local server: the browser login, the frontend files, the message texts, the
+/// run API, the saved profile, the quit route and the tab route. They have no sockets, so the tests
+/// call `handle` directly. The calls come from one thread.
 class Routes {
   public:
     /// Returns the current time; the tests pass a fake clock.
@@ -72,6 +73,12 @@ class Routes {
 
     HttpResponse login(const HttpRequest& aRequest);
 
+    /// `POST /api/tab`: a page says it is open or closed (R22).
+    HttpResponse tabMessage(const HttpRequest& aRequest);
+
+    /// Step 7: the answer for an API call that passed the guard (not the login).
+    HttpResponse routeApi(const HttpRequest& aRequest, std::string_view aPath);
+
     /// The answer for a path outside `/api`: the file of that path, or 404.
     HttpResponse staticFile(const HttpRequest& aRequest, std::string_view aPath) const;
 
@@ -83,7 +90,8 @@ class Routes {
     RunRoutes mRunRoutes;
     ProfileRoutes mProfileRoutes;
     std::span<const StaticFile> mStaticFiles;
-    std::string mVersionBody; ///< The `GET /api/version` body, built once.
+    std::string mVersionBody;        ///< The `GET /api/version` body, built once.
+    std::set<std::string> mOpenTabs; ///< The ids of the pages that said they are open.
 };
 
 } // namespace taxbroker

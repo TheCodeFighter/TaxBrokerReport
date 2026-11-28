@@ -1,0 +1,28 @@
+The AppImage runtime
+====================
+
+The file TaxBrokerReport-<version>-x86_64.AppImage starts with the AppImage "type 2" runtime
+(release 20251108 of https://github.com/AppImage/type2-runtime, file runtime-x86_64), which
+mounts the SquashFS image behind it. The runtime is not part of TaxBrokerReport. It is copied
+unchanged from that release; its SHA-256 is written in docker/Dockerfile.
+
+The runtime's own code is MIT licensed. The release links these libraries statically (from the
+build files of the release; check them there for the exact versions):
+
+  libfuse 3        LGPL-2.1 (the release builds it with its own patches)
+  squashfuse       BSD-2-Clause
+  zstd             BSD-3-Clause (or GPL-2.0, at your choice)
+  zlib             zlib licence
+  mimalloc         MIT
+  musl libc        MIT
+
+The complete source of the runtime and of its build, which is what is needed to rebuild and
+relink it, is at:
+
+  https://github.com/AppImage/type2-runtime/tree/20251108
+
+You may replace the runtime in an AppImage: it is the first part of the file, in front of the
+SquashFS image (`--appimage-offset` prints where the image starts).
+
+The licence texts of those components are in the source of the release. TaxBrokerReport itself
+is MIT licensed (LICENSE) and contains the third-party code listed in THIRD_PARTY_NOTICES.txt.

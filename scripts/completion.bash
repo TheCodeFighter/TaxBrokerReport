@@ -186,6 +186,8 @@ _tbr_run() {
     _tbr_complete --reuse-build-backend --reuse-build-frontend --reuse-build --no-browser --help
 }
 _tbr_e2e() { _tbr_complete --reuse-build --help :: none; }
+_tbr_package() { _tbr_complete --help :: none; }
+_tbr_smoke_package() { _tbr_complete --help :: dir; }
 _tbr_frontend() { _tbr_complete --rebuild-all --help :: "words:install typecheck test build check all"; }
 _tbr_format() { _tbr_complete --check -- --help :: file+; }
 _tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration boundary" --help :: none; }
@@ -221,7 +223,7 @@ _tbr_profile() {
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
     dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ibkr_parse dump_ecb_rates
-    dump_exact_arithmetic report profile run frontend e2e)
+    dump_exact_arithmetic report profile run frontend e2e package smoke_package)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.
